@@ -1,3 +1,6 @@
+[[bin]]
+name = "axelrot"
+path = "src/main.rs"
 [package]
 name = "axelrot"
 version = "0.1.0"
@@ -5,3 +8,7 @@ edition = "2024"
 
 [dependencies]
 chess = "3.2.0"
+
+[lib]
+name = "axelrot"
+path = "src/lib.rs"
