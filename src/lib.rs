@@ -1,3 +1,16 @@
+pub struct PvTable {
+    pub pv: Vec<chess::ChessMove>,
+}
+
+impl PvTable {
+    pub fn new() -> Self {
+        PvTable { pv: Vec::new() }
+    }
+    pub fn set_pv(&mut self, pv: &[chess::ChessMove]) {
+        self.pv.clear();
+        self.pv.extend_from_slice(pv);
+    }
+}
 
 fn quiesce(board: &mut Board, mut alpha: i32, beta: i32, ply: usize, history: &mut Vec<Board>) -> i32 {
    
@@ -124,13 +137,12 @@ pub fn evaluation(board: &Board) -> i32 {
 
     let mut total_score = 0;
 
-    // For test compatibility, use material-only evaluation (no PST)
+   
     for piece in ALL_PIECES {
         let value = *piece_values.get(&piece).unwrap_or(&0);
-        // Us
+
         let our_count = (board.pieces(piece) & board.color_combined(us)).popcnt();
         total_score += our_count as i32 * value;
-        // Them
         let their_count = (board.pieces(piece) & board.color_combined(them)).popcnt();
         total_score -= their_count as i32 * value;
     }
@@ -138,23 +150,50 @@ pub fn evaluation(board: &Board) -> i32 {
     total_score
 }
 
-pub fn axelrot(board: &Board, depth: i32) -> String {
-    let mut best_value = i32::MIN + 1;
+pub fn axelrot(board: &Board, max_depth: i32) -> String {
     let mut best_move = None;
-    let alpha = i32::MIN + 1;
-    let beta = i32::MAX;
+    let mut best_value = i32::MIN + 1;
+    let mut pv_table = PvTable::new();
     let mut board = *board;
     let mut history = Vec::new();
-    for m in MoveGen::new_legal(&board) {
-        history.push(board);
-        board = board.make_move_new(m);
-        let value = -negamax(&mut board, -beta, -alpha, depth - 1, &mut history);
-        board = history.pop().unwrap();
-        if value > best_value {
-            best_value = value;
-            best_move = Some(m);
+
+    for depth in 1..=max_depth {
+        let mut pv = Vec::new();
+        let mut pv_temp = Vec::new();
+        let mut alpha = i32::MIN + 1;
+        let beta = i32::MAX;
+
+       
+        let mut moves: Vec<_> = MoveGen::new_legal(&board).collect();
+        if let Some(pv_move) = pv_table.pv.get(0) {
+            if let Some(pos) = moves.iter().position(|m| m == pv_move) {
+                let mv = moves.remove(pos);
+                moves.insert(0, mv);
+            }
         }
+
+        for &mv in &moves {
+            history.push(board);
+            board = board.make_move_new(mv);
+            pv_temp.clear();
+            let value = -negamax(&mut board, -beta, -alpha, depth - 1, 1, &mut history, &mut pv_temp, &mut pv);
+            board = history.pop().unwrap();
+
+            if value > best_value || best_move.is_none() {
+                best_value = value;
+                best_move = Some(mv);
+                pv.clear();
+                pv.push(mv);
+                pv.extend_from_slice(&pv_temp);
+            }
+            if value > alpha {
+                alpha = value;
+            }
+        }
+        pv_table.set_pv(&pv);
+
     }
+
     if let Some(mv) = best_move {
         mv.to_string()
     } else {
@@ -162,20 +201,47 @@ pub fn axelrot(board: &Board, depth: i32) -> String {
     }
 }
 
-fn negamax(board: &mut Board, mut alpha: i32, beta: i32, depth: i32, history: &mut Vec<Board>) -> i32 {
-    if depth == 0 {
-        return quiesce(board, alpha, beta, 0, history);
+fn negamax(
+    board: &mut Board,
+    mut alpha: i32,
+    beta: i32,
+    depth: i32,
+    ply: usize,
+    history: &mut Vec<Board>,
+    pv: &mut Vec<chess::ChessMove>,
+    pv_temp: &mut Vec<chess::ChessMove>,
+) -> i32 {
+
+    if depth <= 0 {
+        return quiesce(board, alpha, beta, ply, history);
     }
-    let mut best_value = i32::MIN + 1;
+
+    if ply > 0 && history.iter().any(|b| b == board) {
+        return 0;
+    }
+
     let moves: Vec<_> = MoveGen::new_legal(board).collect();
+
+    if moves.is_empty() {
+
+        return if board.checkers().popcnt() > 0 {
+            -10000 + ply as i32 
+        } else {
+            0 
+        };
+    }
+
+    let mut best_value = -10000; 
+    let mut found_pv = false;
+
     for mv in moves {
-
         history.push(*board);
-
         *board = board.make_move_new(mv);
-        let score = -negamax(board, -beta, -alpha, depth - 1, history);
-
+        pv_temp.clear();
+        let score = -negamax(board, -beta, -alpha, depth - 1, ply + 1, history, pv_temp, pv);
         *board = history.pop().unwrap();
+
+    
 
         if score >= beta {
             return score;
@@ -184,8 +250,14 @@ fn negamax(board: &mut Board, mut alpha: i32, beta: i32, depth: i32, history: &m
             best_value = score;
             if score > alpha {
                 alpha = score;
+         
+                pv.clear();
+                pv.push(mv);
+                pv.extend_from_slice(pv_temp);
+                found_pv = true;
             }
         }
     }
+
     best_value
 }
