@@ -87,14 +87,14 @@ use chess::{Board, Piece, Color, ALL_PIECES, MoveGen};
 use std::collections::HashMap;
 
 pub fn evaluation(board: &Board) -> i32 {
-    let mut piece_values = HashMap::new();
-    piece_values.insert(Piece::Pawn, 100);
-    piece_values.insert(Piece::Knight, 300);
-    piece_values.insert(Piece::Bishop, 300);
-    piece_values.insert(Piece::Rook, 500);
-    piece_values.insert(Piece::Queen, 900);
-    piece_values.insert(Piece::King, 0);
-
+    let piece_values = [
+        100, 
+        300, 
+        300, 
+        500, 
+        900, 
+        0,   
+    ];
     let pawn_pst: [i32; 64] = [
         0, 0, 0, 0, 0, 0, 0, 0,
         5, 10, 10, -40, -40, 10, 10, 5,
@@ -156,24 +156,41 @@ pub fn evaluation(board: &Board) -> i32 {
         -30, -40, -40, -50, -50, -40, -40, -30
     ];
 
-    let us = board.side_to_move();
-    let them = match us {
-        Color::White => Color::Black,
-        Color::Black => Color::White,
-    };
-
-    let mut total_score = 0;
-
-   
-    for piece in ALL_PIECES {
-        let value = *piece_values.get(&piece).unwrap_or(&0);
-
-        let our_count = (board.pieces(piece) & board.color_combined(us)).popcnt();
-        total_score += our_count as i32 * value;
-        let their_count = (board.pieces(piece) & board.color_combined(them)).popcnt();
-        total_score -= their_count as i32 * value;
+    fn mirror_sq(sq: usize) -> usize {
+        sq ^ 56
     }
 
+    use chess::Piece::*;
+    use chess::Color;
+    use chess::ALL_PIECES;
+    use chess::Square;
+
+    let mut total_score = 0;
+    for (piece_idx, &piece) in [Pawn, Knight, Bishop, Rook, Queen, King].iter().enumerate() {
+        let value = piece_values[piece_idx];
+        let our_bb = board.pieces(piece) & board.color_combined(board.side_to_move());
+        let their_bb = board.pieces(piece) & board.color_combined(!board.side_to_move());
+
+        let pst = match piece {
+            Pawn => &pawn_pst,
+            Knight => &knight_pst,
+            Bishop => &bishop_pst,
+            Rook => &rook_pst,
+            Queen => &queen_pst,
+            King => &king_pst,
+        };
+
+        for sq in our_bb {
+            let idx = sq.to_index();
+            total_score += value;
+            total_score += pst[idx];
+        }
+        for sq in their_bb {
+            let idx = mirror_sq(sq.to_index());
+            total_score -= value;
+            total_score -= pst[idx];
+        }
+    }
     total_score
 }
 
