@@ -99,12 +99,28 @@ fn main() {
             let score = evaluation(&board);
             println!("info string eval: side to move: {}, score: {}", stm, score);
         } else if input.starts_with("go") {
-            let depth = 3;
-            let nodes = 1234;
-            let time = 10;
-            let best_move = axelrot(&board, depth);
+
+            let mut wtime = 300_000u64;
+            let mut btime = 300_000u64;
+            let mut winc = 0u64;
+            let mut binc = 0u64;
+            let mut depth = 10;
+            for token in input.split_whitespace() {
+                if token == "wtime" {
+                    wtime = input.split_whitespace().skip_while(|&t| t != "wtime").nth(1).and_then(|v| v.parse().ok()).unwrap_or(wtime);
+                } else if token == "btime" {
+                    btime = input.split_whitespace().skip_while(|&t| t != "btime").nth(1).and_then(|v| v.parse().ok()).unwrap_or(btime);
+                } else if token == "winc" {
+                    winc = input.split_whitespace().skip_while(|&t| t != "winc").nth(1).and_then(|v| v.parse().ok()).unwrap_or(winc);
+                } else if token == "binc" {
+                    binc = input.split_whitespace().skip_while(|&t| t != "binc").nth(1).and_then(|v| v.parse().ok()).unwrap_or(binc);
+                } else if token == "depth" {
+                    depth = input.split_whitespace().skip_while(|&t| t != "depth").nth(1).and_then(|v| v.parse().ok()).unwrap_or(depth);
+                }
+            }
+            let best_move = axelrot(&board, depth, wtime, btime, winc, binc);
             let score = evaluation(&board) * 100;
-            println!("info depth {} nodes {} time {} score cp {} pv {}", depth, nodes, time, score, best_move);
+            println!("info depth {} score cp {} pv {}", depth, score, best_move);
             println!("bestmove {}", best_move);
         } else if input == "stop" {
             println!("info string stop received");

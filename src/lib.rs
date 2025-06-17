@@ -1,3 +1,30 @@
+use std::time::{Duration, Instant};
+
+pub struct SearchInfo {
+    pub start: Instant,
+    pub time_budget: Duration,
+    pub stopped: bool,
+}
+
+impl SearchInfo {
+    pub fn new(time_budget_ms: u64) -> Self {
+        SearchInfo {
+            start: Instant::now(),
+            time_budget: Duration::from_millis(time_budget_ms),
+            stopped: false,
+        }
+    }
+    pub fn should_stop(&mut self) -> bool {
+        if self.stopped {
+            return true;
+        }
+        if self.start.elapsed() >= self.time_budget {
+            self.stopped = true;
+            return true;
+        }
+        false
+    }
+}
 pub struct PvTable {
     pub pv: Vec<chess::ChessMove>,
 }
@@ -150,7 +177,27 @@ pub fn evaluation(board: &Board) -> i32 {
     total_score
 }
 
-pub fn axelrot(board: &Board, max_depth: i32) -> String {
+pub fn axelrot(
+    board: &Board,
+    max_depth: i32,
+    wtime: u64,
+    btime: u64,
+    winc: u64,
+    binc: u64,
+) -> String {
+
+    let stm = board.side_to_move();
+    let time_left = match stm {
+        Color::White => wtime,
+        Color::Black => btime,
+    };
+    let inc = match stm {
+        Color::White => winc,
+        Color::Black => binc,
+    };
+    let move_time = (time_left / 30).max(10) + inc;
+    let mut info = SearchInfo::new(move_time);
+
     let mut best_move = None;
     let mut best_value = i32::MIN + 1;
     let mut pv_table = PvTable::new();
@@ -158,12 +205,12 @@ pub fn axelrot(board: &Board, max_depth: i32) -> String {
     let mut history = Vec::new();
 
     for depth in 1..=max_depth {
+        if info.should_stop() { break; }
         let mut pv = Vec::new();
         let mut pv_temp = Vec::new();
         let mut alpha = i32::MIN + 1;
         let beta = i32::MAX;
 
-       
         let mut moves: Vec<_> = MoveGen::new_legal(&board).collect();
         if let Some(pv_move) = pv_table.pv.get(0) {
             if let Some(pos) = moves.iter().position(|m| m == pv_move) {
@@ -173,12 +220,14 @@ pub fn axelrot(board: &Board, max_depth: i32) -> String {
         }
 
         for &mv in &moves {
+            if info.should_stop() { break; }
             history.push(board);
             board = board.make_move_new(mv);
             pv_temp.clear();
-            let value = -negamax(&mut board, -beta, -alpha, depth - 1, 1, &mut history, &mut pv_temp, &mut pv);
+            let value = -negamax(&mut board, -beta, -alpha, depth - 1, 1, &mut history, &mut pv_temp, &mut pv, &mut info);
             board = history.pop().unwrap();
 
+            if info.should_stop() { break; }
             if value > best_value || best_move.is_none() {
                 best_value = value;
                 best_move = Some(mv);
@@ -191,7 +240,6 @@ pub fn axelrot(board: &Board, max_depth: i32) -> String {
             }
         }
         pv_table.set_pv(&pv);
-
     }
 
     if let Some(mv) = best_move {
@@ -210,7 +258,11 @@ fn negamax(
     history: &mut Vec<Board>,
     pv: &mut Vec<chess::ChessMove>,
     pv_temp: &mut Vec<chess::ChessMove>,
+    info: &mut SearchInfo,
 ) -> i32 {
+    if info.should_stop() {
+        return 0; 
+    }
 
     if depth <= 0 {
         return quiesce(board, alpha, beta, ply, history);
@@ -223,26 +275,29 @@ fn negamax(
     let moves: Vec<_> = MoveGen::new_legal(board).collect();
 
     if moves.is_empty() {
-
         return if board.checkers().popcnt() > 0 {
-            -10000 + ply as i32 
+            -10000 + ply as i32
         } else {
-            0 
+            0
         };
     }
 
-    let mut best_value = -10000; 
+    let mut best_value = -10000;
     let mut found_pv = false;
 
     for mv in moves {
+        if info.should_stop() {
+            break;
+        }
         history.push(*board);
         *board = board.make_move_new(mv);
         pv_temp.clear();
-        let score = -negamax(board, -beta, -alpha, depth - 1, ply + 1, history, pv_temp, pv);
+        let score = -negamax(board, -beta, -alpha, depth - 1, ply + 1, history, pv_temp, pv, info);
         *board = history.pop().unwrap();
 
-    
-
+        if info.should_stop() {
+            break;
+        }
         if score >= beta {
             return score;
         }
@@ -250,7 +305,6 @@ fn negamax(
             best_value = score;
             if score > alpha {
                 alpha = score;
-         
                 pv.clear();
                 pv.push(mv);
                 pv.extend_from_slice(pv_temp);
