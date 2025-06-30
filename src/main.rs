@@ -119,8 +119,28 @@ fn main() {
                 }
             }
             let best_move = axelrot(&board, depth, wtime, btime, winc, binc);
-            let score = evaluation(&board) * 100;
-            println!("info depth {} score cp {} pv {}", depth, score, best_move);
+
+            use chess::MoveGen;
+            use axelrot::SearchInfo;
+            use std::cmp::{max, min};
+            let mut board2 = board;
+            let mut history = Vec::new();
+            let mut pv = Vec::new();
+            let mut pv_temp = Vec::new();
+            let mut info = SearchInfo::new(1000);
+            let value = axelrot::negamax(&mut board2, i32::MIN + 1, i32::MAX, depth as i32, 0, &mut history, &mut pv, &mut pv_temp, &mut info);
+           
+            let mate_score = 10000;
+            if value.abs() >= mate_score - 100 {
+                // Mate detected
+                let mate_in = ((mate_score - value.abs()) / 2) + 1;
+                let mate_sign = if value > 0 { 1 } else { -1 };
+                // UCI: positive for mate given, negative for mate received
+                println!("info depth {} score mate {} pv {}", depth, mate_sign * mate_in, best_move);
+            } else {
+                let score = value;
+                println!("info depth {} score cp {} pv {}", depth, score, best_move);
+            }
             println!("bestmove {}", best_move);
         } else if input == "stop" {
             println!("info string stop received");

@@ -8,10 +8,10 @@ fn test_time_management_short_vs_long() {
     let depth = 10;
     let winc = 0;
     let binc = 0;
-    // Short time: 50ms
+
     let wtime_short = 50;
     let btime_short = 50;
-    // Long time: 500ms
+ 
     let wtime_long = 500;
     let btime_long = 500;
 

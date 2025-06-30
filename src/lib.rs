@@ -83,7 +83,7 @@ fn quiesce(board: &mut Board, mut alpha: i32, beta: i32, ply: usize, history: &m
     }
     stand_pat
 }
-use chess::{Board, Piece, Color, ALL_PIECES, MoveGen};
+use chess::{Board, Piece, Color, ALL_PIECES, MoveGen, BoardStatus};
 use std::collections::HashMap;
 
 pub fn evaluation(board: &Board) -> i32 {
@@ -215,7 +215,7 @@ pub fn axelrot(
     let move_time = (time_left / 30).max(10) + inc;
     let mut info = SearchInfo::new(move_time);
 
-    let mut best_move = None;
+    let mut best_move: Option<chess::ChessMove> = None;
     let mut best_value = i32::MIN + 1;
     let mut pv_table = PvTable::new();
     let mut board = *board;
@@ -236,6 +236,9 @@ pub fn axelrot(
             }
         }
 
+        let mut current_best_move: Option<chess::ChessMove> = None;
+        let mut current_best_value = i32::MIN + 1;
+
         for &mv in &moves {
             if info.should_stop() { break; }
             history.push(board);
@@ -244,10 +247,12 @@ pub fn axelrot(
             let value = -negamax(&mut board, -beta, -alpha, depth - 1, 1, &mut history, &mut pv_temp, &mut pv, &mut info);
             board = history.pop().unwrap();
 
+            println!("root move {} value {}", mv, value);
+
             if info.should_stop() { break; }
-            if value > best_value || best_move.is_none() {
-                best_value = value;
-                best_move = Some(mv);
+            if value > current_best_value || current_best_move.is_none() {
+                current_best_value = value;
+                current_best_move = Some(mv);
                 pv.clear();
                 pv.push(mv);
                 pv.extend_from_slice(&pv_temp);
@@ -257,6 +262,11 @@ pub fn axelrot(
             }
         }
         pv_table.set_pv(&pv);
+
+        if !info.should_stop() && current_best_move.is_some() {
+            best_move = current_best_move;
+            best_value = current_best_value;
+        }
     }
 
     if let Some(mv) = best_move {
@@ -266,7 +276,7 @@ pub fn axelrot(
     }
 }
 
-fn negamax(
+pub fn negamax(
     board: &mut Board,
     mut alpha: i32,
     beta: i32,
@@ -288,6 +298,7 @@ fn negamax(
     if ply > 0 && history.iter().any(|b| b == board) {
         return 0;
     }
+
 
     let moves: Vec<_> = MoveGen::new_legal(board).collect();
 
