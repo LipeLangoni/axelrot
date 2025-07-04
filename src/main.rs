@@ -104,7 +104,7 @@ fn main() {
             let mut btime = 300_000u64;
             let mut winc = 0u64;
             let mut binc = 0u64;
-            let mut depth = 10;
+            let mut depth = 20;
             for token in input.split_whitespace() {
                 if token == "wtime" {
                     wtime = input.split_whitespace().skip_while(|&t| t != "wtime").nth(1).and_then(|v| v.parse().ok()).unwrap_or(wtime);
@@ -119,28 +119,6 @@ fn main() {
                 }
             }
             let best_move = axelrot(&board, depth, wtime, btime, winc, binc);
-
-            use chess::MoveGen;
-            use axelrot::SearchInfo;
-            use std::cmp::{max, min};
-            let mut board2 = board;
-            let mut history = Vec::new();
-            let mut pv = Vec::new();
-            let mut pv_temp = Vec::new();
-            let mut info = SearchInfo::new(1000);
-            let value = axelrot::negamax(&mut board2, i32::MIN + 1, i32::MAX, depth as i32, 0, &mut history, &mut pv, &mut pv_temp, &mut info);
-           
-            let mate_score = 10000;
-            if value.abs() >= mate_score - 100 {
-                // Mate detected
-                let mate_in = ((mate_score - value.abs()) / 2) + 1;
-                let mate_sign = if value > 0 { 1 } else { -1 };
-                // UCI: positive for mate given, negative for mate received
-                println!("info depth {} score mate {} pv {}", depth, mate_sign * mate_in, best_move);
-            } else {
-                let score = value;
-                println!("info depth {} score cp {} pv {}", depth, score, best_move);
-            }
             println!("bestmove {}", best_move);
         } else if input == "stop" {
             println!("info string stop received");

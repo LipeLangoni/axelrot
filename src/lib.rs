@@ -86,6 +86,37 @@ fn quiesce(board: &mut Board, mut alpha: i32, beta: i32, ply: usize, history: &m
 use chess::{Board, Piece, Color, ALL_PIECES, MoveGen, BoardStatus};
 use std::collections::HashMap;
 
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum NodeType {
+    Exact,
+    LowerBound,
+    UpperBound,
+}
+
+pub struct TTEntry {
+    pub value: i32,
+    pub depth: i32,
+    pub node_type: NodeType,
+    pub ply: usize,
+}
+
+pub struct TranspositionTable {
+    pub table: HashMap<u64, TTEntry>,
+}
+
+impl TranspositionTable {
+    pub fn new() -> Self {
+        TranspositionTable { table: HashMap::new() }
+    }
+    pub fn get(&self, hash: u64, ply: usize) -> Option<&TTEntry> {
+        self.table.get(&hash).filter(|entry| entry.ply <= ply)
+    }
+    pub fn put(&mut self, hash: u64, value: i32, depth: i32, node_type: NodeType, ply: usize) {
+        let entry = TTEntry { value, depth, node_type, ply };
+        self.table.insert(hash, entry);
+    }
+}
+
 pub fn evaluation(board: &Board) -> i32 {
     let piece_values = [
         100, 
@@ -220,7 +251,7 @@ pub fn axelrot(
     let mut pv_table = PvTable::new();
     let mut board = *board;
     let mut history = Vec::new();
-
+    let mut tt = TranspositionTable::new();
     for depth in 1..=max_depth {
         if info.should_stop() { break; }
         let mut pv = Vec::new();
@@ -244,10 +275,8 @@ pub fn axelrot(
             history.push(board);
             board = board.make_move_new(mv);
             pv_temp.clear();
-            let value = -negamax(&mut board, -beta, -alpha, depth - 1, 1, &mut history, &mut pv_temp, &mut pv, &mut info);
+            let value = -negamax(&mut board, -beta, -alpha, depth - 1, 1, &mut history, &mut pv_temp, &mut pv, &mut info, &mut tt);
             board = history.pop().unwrap();
-
-            println!("root move {} value {}", mv, value);
 
             if info.should_stop() { break; }
             if value > current_best_value || current_best_move.is_none() {
@@ -286,22 +315,28 @@ pub fn negamax(
     pv: &mut Vec<chess::ChessMove>,
     pv_temp: &mut Vec<chess::ChessMove>,
     info: &mut SearchInfo,
+    tt: &mut TranspositionTable,
 ) -> i32 {
     if info.should_stop() {
-        return 0; 
+        return 0;
     }
-
     if depth <= 0 {
         return quiesce(board, alpha, beta, ply, history);
     }
-
     if ply > 0 && history.iter().any(|b| b == board) {
         return 0;
     }
-
-
+    let hash = board.get_hash();
+    if let Some(entry) = tt.get(hash, ply) {
+        if entry.depth >= depth {
+            match entry.node_type {
+                NodeType::Exact => return entry.value,
+                NodeType::LowerBound => if entry.value > beta { return entry.value; },
+                NodeType::UpperBound => if entry.value <= alpha { return entry.value; },
+            }
+        }
+    }
     let moves: Vec<_> = MoveGen::new_legal(board).collect();
-
     if moves.is_empty() {
         return if board.checkers().popcnt() > 0 {
             -10000 + ply as i32
@@ -309,10 +344,8 @@ pub fn negamax(
             0
         };
     }
-
     let mut best_value = -10000;
     let mut found_pv = false;
-
     for mv in moves {
         if info.should_stop() {
             break;
@@ -320,13 +353,13 @@ pub fn negamax(
         history.push(*board);
         *board = board.make_move_new(mv);
         pv_temp.clear();
-        let score = -negamax(board, -beta, -alpha, depth - 1, ply + 1, history, pv_temp, pv, info);
+        let score = -negamax(board, -beta, -alpha, depth - 1, ply + 1, history, pv_temp, pv, info, tt);
         *board = history.pop().unwrap();
-
         if info.should_stop() {
             break;
         }
         if score >= beta {
+            tt.put(hash, score, depth, NodeType::LowerBound, ply);
             return score;
         }
         if score > best_value {
@@ -340,6 +373,7 @@ pub fn negamax(
             }
         }
     }
-
+    let node_type = if best_value > alpha { NodeType::Exact } else { NodeType::UpperBound };
+    tt.put(hash, best_value, depth, node_type, ply);
     best_value
 }
